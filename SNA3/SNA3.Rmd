@@ -1,0 +1,124 @@
+---
+title: "HW3"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: no
+---
+# Network communities
+
+```{r, echo=FALSE}
+library(igraph)
+```
+
+## Yahoo Music Network
+
+For this assignment, you have to load [the part of Yahoo Music Network](https://drive.google.com/file/d/0Bwd5a7NScgMtNElfOFdSbE1UYnM/view). Archive contains network in GML format and corresponding list of artists.
+
+```{r}
+# open the file with graph
+yahoo_music_path <- file.path('C:', 'Users', 'Mikhail', 'Desktop', 'SNA3', 'music2K.gml')
+yahoo_music <- read.graph(yahoo_music_path, format='gml')
+
+# open the file with names
+yahoo_artists_path <- file.path('C:', 'Users', 'Mikhail', 'Desktop', 'SNA3', 'artists.txt')
+yahoo_artists <- readLines(yahoo_artists_path)
+```
+
+Edges in this network appear if enough number of users have given ratings to both music bands. Note, that edges are weighted with similarity of the ratings.
+
+### 1. Preprocessing
+
+This network needs to be preprocessed. Do the steps, described on seminar, to make it look properly. How many vertices and edges were deleted?
+
+First, we delete isolated nodes and after that simplify the structure of the graph.
+
+```{r}
+# remove unused names
+vertices_i_to_delete <- V(yahoo_music)[degree(yahoo_music) == 0]
+yahoo_artists <- yahoo_artists[-vertices_i_to_delete]
+
+# remove disconnected vertices
+before_vcount <- vcount(yahoo_music)
+yahoo_music <- delete.vertices(yahoo_music, vertices_i_to_delete)
+after_vcount <- vcount(yahoo_music)
+paste('Number of deleted vertices:', before_vcount - after_vcount)
+
+# remove multiple edges and loops
+before_ecount <- ecount(yahoo_music)
+yahoo_music <- simplify(yahoo_music)
+after_ecount <- ecount(yahoo_music)
+paste('Number of deleted edges:', before_ecount - after_ecount)
+
+# add labels to yahoo graph
+V(yahoo_music)$label <- yahoo_artists
+```
+
+### 2. Clustering
+
+Define clusters for this networks using one of the algorithms described on lectures and seminars:
+
+```{r}
+# To do this task fastgreedy.community will be used:
+yahoo_communities <- fastgreedy.community(yahoo_music)
+plot(yahoo_communities, yahoo_music, vertex.label=NA, vertex.size=4)
+```
+
+Compute density of obtained clusters:
+```{r}
+yahoo_communities_list <- vector('list', length(yahoo_communities))
+yahoo_communities_densities <- vector('list', length(yahoo_communities))
+
+for (i in 1:length(yahoo_communities)) {
+  yahoo_communities_list[[i]] <- induced.subgraph(yahoo_music, yahoo_communities$membership == i)
+  yahoo_communities_densities[[i]] <- graph.density(yahoo_communities_list[[i]])
+}
+
+unlist(yahoo_communities_densities)
+```
+
+Compute the ratio of inner clusters connections to outer ones:
+```{r}
+total_edges <- ecount(yahoo_music)
+yahoo_communities_inout <- vector('list', length(yahoo_communities))
+for (i in 1:length(yahoo_communities)) {
+  curr_comm_edges <- ecount(yahoo_communities_list[[i]])
+  yahoo_communities_inout[[i]] <- curr_comm_edges / (total_edges - curr_comm_edges)
+}
+
+unlist(yahoo_communities_inout)
+```
+
+### 3. Visualization & interpretation
+
+Visulize five of the most dense clusters. Use names of artists as node labels on the graph.
+
+```{r}
+# find indexes of top5 dense clusters
+top5_dense_clusters_i <- which(yahoo_communities_densities >= sort(
+  unlist(yahoo_communities_densities), decreasing = TRUE)[5])
+
+# find nodes in these clusters
+top5_dense_vertices <- V(yahoo_music)[yahoo_communities$membership %in% top5_dense_clusters_i]
+
+# create a graph from them
+top5_dense_graph <- induced.subgraph(yahoo_music, top5_dense_vertices)
+
+SCC <- clusters(top5_dense_graph, mode="strong")
+V(top5_dense_graph)$color <- rainbow(SCC$no)[SCC$membership]
+plot(top5_dense_graph, mark.groups = split(1:vcount(top5_dense_graph), SCC$membership))
+```
+
+<b> (Extra task) </b>Try to interpret (using Wikipedia or other resources) obtained clusters.
+
+Red (Gene Loves Jezebel, Xymox, ...) - rock bands,
+
+Green (Diana Krall, John Mayall, ...) - jazz music,
+
+Purple (Agents Of Good Roots, Phish, ...) - rock (again),
+
+Blue (Rita Rudner, Sandra Bernhard, ...) - comedians,
+
+Yellow (K.W.S, Newcleus, ...) - electro music.
+

@@ -1,0 +1,258 @@
+---
+title: "Social Network Analysis <br/> Home Assignment 2"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: no
+---
+# Graph models. Centrality metrics
+
+```{r, echo=FALSE, include=FALSE}
+#install.packages("rgexf", dependencies=TRUE)
+#install.packages("R.matlab")
+library(igraph)
+library(rgexf)
+library(R.matlab)
+```
+
+## Task 1. Your social network
+
+For the first task, you have to load your [vk.com](http://vk.com) network. Please follow the instructions posted on the course wiki or user [VK Application](vk.com/app3861133). For [FB](http://facebook.com) users try to use [NetVizz](http://thepoliticsofsystems.net/2010/03/netvizz-facebook-to-gephi/). If you did it correctly, you should have a GraphML file with your own network. Read it to R:
+
+```{r}
+gexf_vk_graph_path = file.path("C:", "Users", "Mikhail", "Desktop", "vk-friends-eng.gexf")
+gexf_vk_graph = read.gexf(gexf_vk_graph_path)
+vk_graph = gexf.to.igraph(gexf_vk_graph)
+
+# rename vertices (remain only first names)
+for (i in 1:length(V(vk_graph)$'name')) {
+  V(vk_graph)[i]$'name' <- as.list(unlist(strsplit(V(vk_graph)[[i]]$'name', " ")))[1]
+}
+
+# Since there are two edges between friends (in and out),
+# remain only one edge by converting directed graph to undirected
+# it's optional
+vk_graph <- as.undirected(vk_graph)
+# There used to be 582 edges in the graph, now there are 291 edges
+
+plot(vk_graph, vertex.label=NA, vertex.size=5, vertex.color="white", edge.color="darkgreen")
+```
+
+### 1. Degree distribution
+
+First, plot degree distribution of your network in log-log scales:
+
+```{r}
+# calculate degree distribution for vk graph
+vk_degree_dist <- degree_distribution(vk_graph, cumulative=FALSE)
+
+# create a graph that follows Power law
+brb_graph <- barabasi.game(1000, directed=FALSE)
+brb_degree_dist <- degree_distribution(brb_graph, cumulative=FALSE)
+
+# plot both vk network distribution and power law network distribution
+par(mfrow=c(2,1))
+plot(vk_degree_dist[which(vk_degree_dist > 0)], log="xy", xlab="Vk degree distribution",
+     ylab="p(vk_degree_dist)")
+plot(brb_degree_dist[which(brb_degree_dist > 0)], log="xy", xlab="Power law degree distribution",
+     ylab="p(brb_degree_dist)")
+```
+
+Is there any correspondence between actual degree distribution of your network and the Power Law distribution? If not, explain why.
+
+It seems a bit like Power law. It will look more like Power law if there was more vertices in the Vk graph.
+
+Now, let's see how it would look if it was random. Produce Erdos-Renyi graph matching your real network (same number of nodes and same average degree). Compare it with your degree distribution.
+
+```{r}
+vk_graph_n_vertices <- length(V(vk_graph))
+mean_vk_graph_degree <- mean(degree(vk_graph))
+vk_edge_probability <- mean_vk_graph_degree / vk_graph_n_vertices
+
+erdos_Renyi_graph <- erdos.renyi.game(vk_graph_n_vertices, vk_edge_probability)
+erdos_Renyi_degree_dist <- degree_distribution(erdos_Renyi_graph, cumulative=FALSE)
+
+mean(degree(vk_graph))
+mean(degree(erdos_Renyi_graph))
+
+plot(erdos_Renyi_graph)
+plot(erdos_Renyi_degree_dist[which(erdos_Renyi_degree_dist > 0)], log="xy",
+     xlab="Erdos Renyi degree distribution", ylab="erdos_Renyi_degree_dist")
+
+ks.test(vk_degree_dist, erdos_Renyi_degree_dist)
+```
+
+It's not easy to see the difference with such small random graph,
+so let's produce bigger one
+
+```{r}
+new_erdos_Renyi_graph <- erdos.renyi.game(vk_graph_n_vertices * 5, vk_edge_probability)
+new_erdos_Renyi_degree_dist <- degree_distribution(new_erdos_Renyi_graph, cumulative=FALSE)
+plot(new_erdos_Renyi_degree_dist[which(new_erdos_Renyi_degree_dist > 0)], log="xy",
+     xlab="Erdos Renyi degree distribution", ylab="new_erdos_Renyi_degree_dist")
+
+ks.test(vk_degree_dist, new_erdos_Renyi_degree_dist)
+```
+
+Now random graph follows normal distribution and the distributions of random graph and Vk graph are completely different.
+
+### 2. Compute centrality metrics
+
+Compute for your network: 
+
+* degree centrality
+
+* closeness centrality
+
+* betweenness centrality
+
+* eigenvector centrality
+
+* Bonacich power centrality
+
+* Alpha centrality
+
+
+```{r}
+vk_degree <- degree(vk_graph)
+vk_closeness <- closeness(vk_graph)
+vk_betweenness <- betweenness(vk_graph)
+vk_eigenvector <- evcent(vk_graph)$'vector'
+vk_bonachich <- bonpow(vk_graph, rescale=TRUE, exponent=0.999) + 0.01
+vk_alpha <- alpha.centrality(vk_graph, alpha=0.999) + 2
+
+fine <- 500
+palette <- colorRampPalette(c('blue','red'))
+vk_degree_col <- palette(fine)[as.numeric(cut(vk_degree, breaks=fine))]
+vk_closeness_col <- palette(fine)[as.numeric(cut(vk_closeness, breaks=fine))]
+vk_betweenness_col <- palette(fine)[as.numeric(cut(vk_betweenness, breaks=fine))]
+vk_eigenvector_col <- palette(fine)[as.numeric(cut(vk_eigenvector, breaks=fine))]
+vk_bonachich_col <- palette(fine)[as.numeric(cut(vk_bonachich, breaks=fine))]
+vk_alpha_col <- palette(fine)[as.numeric(cut(vk_alpha, breaks=fine))]
+
+```
+
+Output six plots corresponding to six centrality metrics you've computed: 
+
+* Use first names of your friends as node labels on the graph (you may hide this information if you wish -- change it by integer ID)
+* Keep the same layout of the network
+* Make node sizes and colours proportional to the respective centrality metrics
+
+Hint: If you get stuck, lab 4 script might be helpful.
+
+```{r}
+# Plot 6 graphs in 2 rows and 3 columns
+op <- par(mfrow = c(2, 3))
+# Keep the same layout
+lay <- layout.fruchterman.reingold(vk_graph)
+
+plot(vk_graph, layout=lay, vertex.color=vk_degree_col, vertex.size=vk_degree * 1.5,
+     vertex.label.cex=0.6, main="Degree centrality")
+plot(vk_graph,layout=lay, vertex.color=vk_closeness_col, vertex.size=vk_closeness * 1500,
+     vertex.label.cex=0.6, main="Closeness centrality")
+plot(vk_graph,layout=lay, vertex.color=vk_betweenness_col, vertex.size=vk_betweenness * 0.2,
+     vertex.label.cex=0.6, main="Betwenness centrality")
+plot(vk_graph,layout=lay, vertex.size=vk_eigenvector * 40, vertex.color=vk_eigenvector_col,
+     vertex.label.cex=0.6, main="Eigenvector centrality")
+plot(vk_graph,layout=lay, vertex.size=vk_bonachich * 250, vertex.color=vk_bonachich_col,
+     vertex.label.cex=0.6, main="Bonachich power centrality")
+plot(vk_graph,layout=lay, vertex.size=vk_alpha * 5, vertex.color=vk_alpha_col,
+     vertex.label.cex=0.6, main="Alpha centrality")
+```
+
+Now, output top ten nodes in each ranking. Again, print only first names in your table to keep privacy:
+
+```{r}
+sort(vk_degree, decreasing=TRUE)[1:10]
+sort(vk_closeness, decreasing=TRUE)[1:10]
+sort(vk_betweenness, decreasing=TRUE)[1:10]
+sort(vk_eigenvector, decreasing=TRUE)[1:10]
+sort(vk_bonachich, decreasing=TRUE)[1:10]
+sort(vk_alpha, decreasing=TRUE)[1:10]
+```
+
+Eigenvector centrality looks almost the same as degree centrality. People with highest closeness centrality have a lot of mutual friends (this list is very similar to degree centrality top10 list). People with high betweenness centrality have a lot of friend (are kinda hubs). There is nothing unexpected in these plots.
+
+## Task 2. Flickr network
+
+In the second task, you will work with a large directed graph. 
+
+Please download [flickr.mat](http://www.hse.ru/data/2015/05/01/1098247366/flickr.mat) 
+
+*Data contains sparse matrix A and list of user names. This is a denser part of the Flickr photo sharing site friendship graph from 2006. Edge direction corresponds to friendship requests (following). Some of the links are reciprocal, others not*
+
+It's a Matlab file. How to deal with it in R? There is a package `R.matlab`. Please install it and call `library(R.matlab)`
+
+Now use `readMat` function to read the file and extract adjacency matrix and a list of user names:
+
+```{r}
+flickr_path <- file.path("C:", "Users", "Mikhail", "Desktop", "SNA2", "flickr.mat")
+flickr = readMat(flickr_path)
+fmatrix=as.matrix(flickr[1]$A)
+fnames=flickr[2]$names
+```
+
+If you have trouble loading large mat file on your laptop --- try to use HSE computer classes with installed R+RStudio.
+
+Look at user names. You might want to remove spaces from the names. Use a function `gsub` to remove them:
+
+```{r}
+fnames=gsub(" ", "", fnames)
+```
+
+Now create a graph, output the number of vertices and edges:
+
+```{r}
+flickr_graph <- graph_from_adjacency_matrix(fmatrix)
+vcount(flickr_graph)
+ecount(flickr_graph)
+```
+
+Compute in- and out- degree centralities, PageRank, Hubs and Authorities for this network:
+
+```{r}
+in_degree_flickr <- degree(flickr_graph, mode="in")
+out_degree_flickr <- degree(flickr_graph, mode="out")
+pr_flickr <- page_rank(flickr_graph)$'vector'
+hub_flicker <- hub_score(flickr_graph)$'vector'
+authority_flicker <- authority_score(flickr_graph)$'vector'
+```
+
+Print top ten names in each ranking:
+
+```{r}
+fnames[order(in_degree_flickr, decreasing=TRUE)[1:10]]
+fnames[order(out_degree_flickr, decreasing=TRUE)[1:10]]
+fnames[order(pr_flickr, decreasing=TRUE)[1:10]]
+fnames[order(hub_flicker, decreasing=TRUE)[1:10]]
+fnames[order(authority_flicker, decreasing=TRUE)[1:10]]
+```
+
+Produce the following plots:
+
+* In-degree centralities versus out-degree centralities
+
+* In-degree centralities versus authorities
+
+* Out-degree centralities versus hubs
+
+* Hubs versus authorities
+
+* PageRank versus hubs
+
+* PageRank versus authorities
+
+
+```{r}
+op <- par(mfrow = c(2, 3))
+plot(in_degree_flickr, out_degree_flickr)
+plot(in_degree_flickr, authority_flicker)
+plot(out_degree_flickr, hub_flicker)
+plot(hub_flicker, authority_flicker)
+plot(pr_flickr, hub_flicker)
+plot(pr_flickr, authority_flicker)
+
+```
+
+These centrality metrics pretty much correlate with each other.
